@@ -1,0 +1,9 @@
+/build*/
+/cmake-build-*/
+/dusklight/
+.idea/
+.DS_Store
+.vs/
+.vscode/
+.idea/
+out/

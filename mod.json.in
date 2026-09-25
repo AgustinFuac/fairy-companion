@@ -1,0 +1,9 @@
+{
+  "id": "com.agustinfuac.fairy_companion",
+  "name": "Fairy Companion",
+  "version": "1.0.0",
+  "author": "AgustinFuac",
+  "description": "If you miss your fairy companion, this mod will bring it back!",
+  "icon": "res/icon.png",
+  "banner": "res/banner.png"
+}
