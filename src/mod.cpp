@@ -19,38 +19,82 @@ static bool    s_hasCompanion = false;
 static ActorId s_companionId = 0;
 
 // ---------------------------------------------------------------------------
-// Fairy color selector (mods panel)
+// Mods panel: fairy color + light toggle
 // ---------------------------------------------------------------------------
 
 static ConfigVarHandle s_colorVar = 0;
+static ConfigVarHandle s_lightVar = 0;
+static ConfigVarHandle s_buttonVar = 0;
 
 // 3 opciones a pedido. Si más adelante se quiere sumar el verde "extra"
 // (FAIRY_COLOR_GREEN, ya definido en el enum), basta con agregar una línea
 // acá.
 static const char* k_fairyColorNames[] = {
     "Navi (Blue)",
-    "Talt (Orange)",
-    "Teal (Red)",
+    "Tatl (Orange)",
+    "Tael (Purple)",
 };
 static constexpr size_t k_fairyColorCount =
 sizeof(k_fairyColorNames) / sizeof(k_fairyColorNames[0]);
 
-// Se dispara cuando el valor efectivo de la variable cambia en runtime,
-// incluida la escritura que hace el propio dropdown (UI_BINDING_CONFIG_VAR).
+// Se disparan cuando el valor efectivo de la variable cambia en runtime,
+// incluida la escritura que hacen los propios controles del panel
+// (UI_BINDING_CONFIG_VAR).
 static void onColorVarChanged(ModContext*, ConfigVarHandle, const ConfigVarValue* value,
     const ConfigVarValue*, void*) {
     maFairyCompanion_c::setSelectedColor((u8)value->int_value);
 }
 
+static void onLightVarChanged(ModContext*, ConfigVarHandle, const ConfigVarValue* value,
+    const ConfigVarValue*, void*) {
+    maFairyCompanion_c::setLightEnabled(value->bool_value);
+}
+
+// Solo Izquierda/Derecha: A/B/R chocan con acciones nativas mientras hay un
+// enemigo fijado (ver la nota en ma_fairy_companion.cpp, Execute()).
+static const char* k_fairyButtonNames[] = {
+    "Pad-Left",
+    "Pad-Right",
+};
+static constexpr size_t k_fairyButtonCount =
+sizeof(k_fairyButtonNames) / sizeof(k_fairyButtonNames[0]);
+
+static void onButtonVarChanged(ModContext*, ConfigVarHandle, const ConfigVarValue* value,
+    const ConfigVarValue*, void*) {
+    maFairyCompanion_c::setActionButton((u8)value->int_value);
+}
+
 static ModResult buildFairyPanel(ModContext* ctx, UiElementHandle pane, void*, ModError*) {
-    UiControlDesc desc = UI_CONTROL_DESC_INIT;
-    desc.kind = UI_CONTROL_DROPDOWN;
-    desc.label = "Fairy Color";
-    desc.binding = UI_BINDING_CONFIG_VAR;
-    desc.config_var = s_colorVar;
-    desc.options = k_fairyColorNames;
-    desc.option_count = k_fairyColorCount;
-    return svc_ui->pane_add_control(ctx, pane, &desc, nullptr);
+    UiControlDesc colorDesc = UI_CONTROL_DESC_INIT;
+    colorDesc.kind = UI_CONTROL_DROPDOWN;
+    colorDesc.label = "Fairy Color";
+    colorDesc.binding = UI_BINDING_CONFIG_VAR;
+    colorDesc.config_var = s_colorVar;
+    colorDesc.options = k_fairyColorNames;
+    colorDesc.option_count = k_fairyColorCount;
+    ModResult r = svc_ui->pane_add_control(ctx, pane, &colorDesc, nullptr);
+    if (r != MOD_OK) {
+        return r;
+    }
+
+    UiControlDesc lightDesc = UI_CONTROL_DESC_INIT;
+    lightDesc.kind = UI_CONTROL_TOGGLE;
+    lightDesc.label = "Fairy Light";
+    lightDesc.binding = UI_BINDING_CONFIG_VAR;
+    lightDesc.config_var = s_lightVar;
+    r = svc_ui->pane_add_control(ctx, pane, &lightDesc, nullptr);
+    if (r != MOD_OK) {
+        return r;
+    }
+
+    UiControlDesc buttonDesc = UI_CONTROL_DESC_INIT;
+    buttonDesc.kind = UI_CONTROL_DROPDOWN;
+    buttonDesc.label = "Action Button";
+    buttonDesc.binding = UI_BINDING_CONFIG_VAR;
+    buttonDesc.config_var = s_buttonVar;
+    buttonDesc.options = k_fairyButtonNames;
+    buttonDesc.option_count = k_fairyButtonCount;
+    return svc_ui->pane_add_control(ctx, pane, &buttonDesc, nullptr);
 }
 
 extern "C" {
@@ -74,17 +118,49 @@ extern "C" {
             svc_log->error(mod_ctx, "failed to register fairy color config var");
             return MOD_ERROR;
         }
-
         svc_config->subscribe(mod_ctx, s_colorVar, onColorVarChanged, nullptr, nullptr);
 
-        // Aplica de entrada el valor guardado de una partida anterior (o el
-        // default si es la primera vez), en vez de esperar al primer cambio
-        // del usuario en el menú.
+        // --- Config var: luz del hada encendida/apagada ---
+        ConfigVarDesc lightDesc = CONFIG_VAR_DESC_INIT;
+        lightDesc.name = "fairy-light";
+        lightDesc.type = CONFIG_VAR_BOOL;
+        lightDesc.default_bool = true;
+        if (svc_config->register_var(mod_ctx, &lightDesc, &s_lightVar) != MOD_OK) {
+            svc_log->error(mod_ctx, "failed to register fairy light config var");
+            return MOD_ERROR;
+        }
+        svc_config->subscribe(mod_ctx, s_lightVar, onLightVarChanged, nullptr, nullptr);
+
+        // --- Config var: botón de acción elegido (Izquierda/Derecha) ---
+        ConfigVarDesc buttonDesc = CONFIG_VAR_DESC_INIT;
+        buttonDesc.name = "fairy-button";
+        buttonDesc.type = CONFIG_VAR_INT;
+        buttonDesc.default_int = FAIRY_BUTTON_LEFT;
+        if (svc_config->register_var(mod_ctx, &buttonDesc, &s_buttonVar) != MOD_OK) {
+            svc_log->error(mod_ctx, "failed to register fairy button config var");
+            return MOD_ERROR;
+        }
+        svc_config->subscribe(mod_ctx, s_buttonVar, onButtonVarChanged, nullptr, nullptr);
+
+        // Aplica de entrada los valores guardados de una partida anterior (o
+        // los defaults si es la primera vez), en vez de esperar al primer
+        // cambio del usuario en el menú.
         int64_t savedColor = FAIRY_COLOR_BLUE;
         svc_config->get_int(mod_ctx, s_colorVar, &savedColor);
         maFairyCompanion_c::setSelectedColor((u8)savedColor);
 
-        // --- Panel en la ventana de Mods, con el dropdown de color ---
+        bool savedLightEnabled = true;
+        svc_config->get_bool(mod_ctx, s_lightVar, &savedLightEnabled);
+        maFairyCompanion_c::setLightEnabled(savedLightEnabled);
+
+        // setActionButton() itself clamps anything above FAIRY_BUTTON_RIGHT
+        // (e.g. leftover 2/3 = old A/B saved by config.json before this
+        // change) back to Left, so no extra validation needed here.
+        int64_t savedButton = FAIRY_BUTTON_LEFT;
+        svc_config->get_int(mod_ctx, s_buttonVar, &savedButton);
+        maFairyCompanion_c::setActionButton((u8)savedButton);
+
+        // --- Panel en la ventana de Mods ---
         UiModsPanelDesc panelDesc = UI_MODS_PANEL_DESC_INIT;
         panelDesc.build = buildFairyPanel;
         if (svc_ui->register_mods_panel(mod_ctx, &panelDesc) != MOD_OK) {
@@ -148,7 +224,7 @@ extern "C" {
             s_registered = false;
         }
 
-        // Config var subscription and the mods panel are torn down
+        // Config vars, subscriptions, and the mods panel are torn down
         // automatically by the host when the mod unloads.
 
         return MOD_OK;
