@@ -442,7 +442,7 @@ int maFairyCompanion_c::Execute() {
         // Full intensity while locked on a real enemy: the deliberate
         // "action available" cue, replacing the native button prompt we
         // decided not to fight for (see the note above the orbit block).
-        const u8 auraA = lockedOnEnemy ? 255 : tint.auraAlpha;
+        const u8 auraA = lockedOnEnemy ? 255 : alpha;
         mAuraId = dComIfGp_particle_set(
             mAuraId, 0x730, &current.pos, &tevStr, &shape_angle,
             NULL, auraA, NULL, -1, &auraPrm, &auraEnv, NULL);
